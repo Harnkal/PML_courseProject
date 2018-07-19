@@ -1,0 +1,115 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Silva, RAFAEL"
+date: "July 19, 2018"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+urlcolor: blue
+---
+
+## Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This section presents all the libraries used during the project.
+
+```{r, message=FALSE}
+library(caret)
+library(doParallel)
+```
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website in [this link](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The chunk below was used to download and load the training and test datasets into R.
+
+```{r}
+# create directory
+if(!dir.exists("./data")) dir.create("./data")
+# download files
+if(!file.exists("./data/pml-training.csv")) {   
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+                "./data/pml-training.csv")
+}
+if(!file.exists("./data/pml-testing.csv")) {   
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+                "./data/pml-testing.csv")
+}
+# read files
+training <- read.csv("data/pml-training.csv", na.strings = c("", "NA"))
+testing <- read.csv("data/pml-testing.csv", na.strings = c("", "NA"))
+```
+
+## Data cleaining and exploration
+
+The first thing to look at in a new dataset is its dimensions. The code below takes care of that.
+
+```{r}
+dim(training)
+```
+
+It is easily noticeable that the amount of variables might be a problem. Unless a super computer is available, training a machine learning algorithm in so many variables might take too much time.
+
+In a closer look it is possible to see that most of these variables are summary variables that are calculated every given period of time for some of the actual acquisitions. For this particular project, these variables have no use at all as they are not available for prediction in the testing dataset. The following code chunk identifies all those variables and prints the first 12 as an example.
+
+```{r}
+unavailableVars <- which(colSums(is.na(training))>0)
+names(training)[unavailableVars][1:12]
+```
+
+Besides the variable identified above, there are some variables that, although they might improve the accuracy of some given model, they should not be relevant when identifying the quality of the exercise being executed, considering them would deliberately overfit such model. These variable are: ```r names(training)[1:7]```, and they are removed from the dataset along with the variables previously identified by next code chunk.
+
+```{r}
+training <- training[, -c(1:7, unavailableVars)]
+```
+
+## Model fitting and cross validation
+
+In this section the machine learning algorithm is trained and cross validated. Although the cross validation might provide a good estimate of the out-of-sample (OOS) error, the training dataset is big enough to be divided and a validation set can be created.
+
+```{r}
+set.seed(13853)
+
+inVal <- createDataPartition(training$classe, p = 0.25, list = FALSE)
+
+validating <- training[inVal,]
+trainingSub <- training[-inVal,]
+```
+
+To create the model, the random forest method was chosen for its accuracy and compatibility with parallel processing. The cross validation was done in 10 folds. The results are printed bellow
+
+```{r, cache=TRUE}
+set.seed(1123)
+
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+
+mod <- train(classe ~ ., data = trainingSub, method = "rf", trControl = trainControl(method = "cv", number = 10))
+
+stopCluster(cl)
+
+mod
+```
+
+## Validation
+
+Although the model seems to be very accurate based on the on the OOS accuracy estimate of ```r round(mean(mod$resample$Accuracy), 4)```, in this section, it was verified how the model performs on a completely new dataset, so the OOS accuracy can be confirmed. The results are shown in the confusion matrix bellow.
+
+```{r}
+confusionMatrix(validating$classe, predict(mod, validating))
+```
+
+## Conclusion and testing
+
+The tests run above show that the final model is very accurate. This model can now be applied to the test set.
+
+```{r}
+results <- predict(mod, testing)
+```
+
+The results where intentionally not printed in this report to comply with the student honor code as much as possible. They where presented and approved on the quiz.
